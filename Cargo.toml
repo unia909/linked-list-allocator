@@ -14,17 +14,7 @@ homepage = "https://os.phil-opp.com/kernel-heap.html#a-better-allocator"
 rust-version = "1.61"
 
 [features]
-default = ["use_spin"]
-use_spin = ["spinning_top"]
-# deprecated - use `use_spin` instead
-use_spin_nightly = ["use_spin"]
 alloc_ref = []
-# deprecated - no effect
-const_mut_refs = []
-
-[dependencies.spinning_top]
-version = "0.2.5"
-optional = true
 
 [package.metadata.release]
 dev-version = false

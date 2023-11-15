@@ -1,30 +1,17 @@
-#![cfg_attr(
-    feature = "alloc_ref",
-    feature(allocator_api, alloc_layout_extra, nonnull_slice_from_raw_parts)
-)]
 #![no_std]
 
 #[cfg(any(test, fuzzing))]
 #[macro_use]
 extern crate std;
 
-#[cfg(feature = "use_spin")]
-extern crate spinning_top;
-
-#[cfg(feature = "use_spin")]
-use core::alloc::GlobalAlloc;
 use core::alloc::Layout;
 #[cfg(feature = "alloc_ref")]
 use core::alloc::{AllocError, Allocator};
 use core::mem::MaybeUninit;
-#[cfg(feature = "use_spin")]
-use core::ops::Deref;
 use core::ptr::NonNull;
 #[cfg(test)]
 use hole::Hole;
 use hole::HoleList;
-#[cfg(feature = "use_spin")]
-use spinning_top::Spinlock;
 
 pub mod hole;
 #[cfg(test)]
@@ -263,86 +250,6 @@ impl Heap {
     /// later use.
     pub unsafe fn extend(&mut self, by: usize) {
         self.holes.extend(by);
-    }
-}
-
-#[cfg(all(feature = "alloc_ref", feature = "use_spin"))]
-unsafe impl Allocator for LockedHeap {
-    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-        if layout.size() == 0 {
-            return Ok(NonNull::slice_from_raw_parts(layout.dangling(), 0));
-        }
-        match self.0.lock().allocate_first_fit(layout) {
-            Ok(ptr) => Ok(NonNull::slice_from_raw_parts(ptr, layout.size())),
-            Err(()) => Err(AllocError),
-        }
-    }
-
-    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-        if layout.size() != 0 {
-            self.0.lock().deallocate(ptr, layout);
-        }
-    }
-}
-
-#[cfg(feature = "use_spin")]
-pub struct LockedHeap(Spinlock<Heap>);
-
-#[cfg(feature = "use_spin")]
-impl LockedHeap {
-    pub const fn empty() -> LockedHeap {
-        LockedHeap(Spinlock::new(Heap::empty()))
-    }
-
-    /// Creates a new heap with the given `bottom` and `size`.
-    ///
-    /// The `heap_bottom` pointer is automatically aligned, so the [`bottom()`][Heap::bottom]
-    /// method might return a pointer that is larger than `heap_bottom` after construction.
-    ///
-    /// The given `heap_size` must be large enough to store the required
-    /// metadata, otherwise this function will panic. Depending on the
-    /// alignment of the `hole_addr` pointer, the minimum size is between
-    /// `2 * size_of::<usize>` and `3 * size_of::<usize>`.
-    ///
-    /// # Safety
-    ///
-    /// The bottom address must be valid and the memory in the
-    /// `[heap_bottom, heap_bottom + heap_size)` range must not be used for anything else.
-    /// This function is unsafe because it can cause undefined behavior if the given address
-    /// is invalid.
-    ///
-    /// The provided memory range must be valid for the `'static` lifetime.
-    pub unsafe fn new(heap_bottom: *mut u8, heap_size: usize) -> LockedHeap {
-        LockedHeap(Spinlock::new(Heap {
-            used: 0,
-            holes: HoleList::new(heap_bottom, heap_size),
-        }))
-    }
-}
-
-#[cfg(feature = "use_spin")]
-impl Deref for LockedHeap {
-    type Target = Spinlock<Heap>;
-
-    fn deref(&self) -> &Spinlock<Heap> {
-        &self.0
-    }
-}
-
-#[cfg(feature = "use_spin")]
-unsafe impl GlobalAlloc for LockedHeap {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        self.0
-            .lock()
-            .allocate_first_fit(layout)
-            .ok()
-            .map_or(core::ptr::null_mut(), |allocation| allocation.as_ptr())
-    }
-
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        self.0
-            .lock()
-            .deallocate(NonNull::new_unchecked(ptr), layout)
     }
 }
 
